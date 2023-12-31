@@ -17,12 +17,12 @@ async def connect_and_discover(address):
                 for char in service.characteristics:
                     if "read" in char.properties:
                         try:
-                            value = bytes(await client.read_gatt_char(char.uuid))
-                            print(f" - Characteristic {char.uuid}: {value}")
+                            value = await client.read_gatt_char(char.uuid)
+                            print(f" - Characteristic (read) {char.uuid}: {value}")
                         except Exception as e:
                             print(f" - Characteristic {char.uuid}: could not read (error: {e})")
                     else:
-                        print(f" - Characteristic {char.uuid}: {char.properties}")
+                        print(f" - Characteristic (no read) {char.uuid}: {char.properties}")
 
 if __name__ == "__main__":
     address = "66:EA:DA:00:29:34"  # Replace with your lantern's address
