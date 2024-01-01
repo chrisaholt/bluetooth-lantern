@@ -5,8 +5,19 @@ import asyncio
 from bleak import BleakClient
 
 async def write_to_characteristic(address, characteristic_uuid):
-    # value_to_write = bytearray([0x01])  # Example value to write; this will need experimentation
-    value_to_write = bytearray([0x00, 0xff, 0xf5, 0x00])
+    # This looks like it's XRGB, where X is still unknown.
+    # value_to_write = bytearray([0x00, 0xff, 0xf5, 0x00]) # Orange
+    # value_to_write = bytearray([0x00, 0x55, 0xf5, 0x00]) # Green
+    # value_to_write = bytearray([0x00, 0xaa, 0xf5, 0x00]) # Yellow
+    # value_to_write = bytearray([0x00, 0x00, 0x00, 0xff]) # Blue
+    # value_to_write = bytearray([0x00, 0xff, 0x00, 0xff]) # Purple
+    # value_to_write = bytearray([0x00, 0x55, 0x00, 0x55]) # Less bright Purple
+
+    # Experimenting with the first array value.
+    value_to_write = bytearray([0x00, 0x00, 0xff, 0x00]) # Green
+    # value_to_write = bytearray([0x01, 0x00, 0xff, 0x00]) # The same green
+    # value_to_write = bytearray([0xff, 0x00, 0xff, 0x00]) # The same green
+
     async with BleakClient(address) as client:
         if await client.is_connected():
             await client.write_gatt_char(characteristic_uuid, value_to_write)
