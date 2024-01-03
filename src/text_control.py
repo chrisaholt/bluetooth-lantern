@@ -3,34 +3,97 @@
 
 import asyncio
 from bleak import BleakClient
+from queue import Queue
+from threading import Thread
+from time import sleep
 
-lantern_address = "66:EA:DA:00:29:34"
-characteristic_uuid_for_color_control = "e4490005-60c7-4baa-818d-235695a2757f"
+# Following code layout at https://medium.com/@imlent/ble-communication-with-pyqt5-based-gui-6d3c2f3ac96f
+class BLE_lantern_control:
+    lantern_address = "66:EA:DA:00:29:34"
+    characteristic_uuid_for_color_control = "e4490005-60c7-4baa-818d-235695a2757f"
+    
+    def __init__(self) -> None:
+        self._client = None
+        self._is_connected = False
+        self._data_queue = Queue()
 
-def validate_rgb(r, g, b):
-    for val in (r, g, b):
-        if val < 0 or val >= 256:
-            raise ValueError
+    def connect(self) -> None:
+        asyncio.run(self.set_connection())
 
-async def change_color(client, r, g, b):
-    value_to_write = bytearray([0x00, r, g, b])
-    await client.write_gatt_char(characteristic_uuid_for_color_control, value_to_write)
+    def push_queue(self, data) -> None:
+        self._data_queue.put(data)
 
-async def main():
-    async with BleakClient(lantern_address) as client:
-        if await client.is_connected():
-            print("Connected. Enter RGB values (0-255) or 'q' to exit.")
-            while True:
-                rgb_input = input("Enter RGB values (R G B): ")
-                if rgb_input.lower() == "q":
-                    break
+    def is_connected(self) -> bool:
+        return self._is_connected
 
+    async def change_color(self, r, g, b):
+        # Validate the numerical color values.
+        for val in (r, g, b):
+            if val < 0 or val >= 256:
+                raise ValueError
+
+        # Write the color.
+        value_to_write = bytearray([0x00, r, g, b])
+        await self._client.write_gatt_char(
+            self.characteristic_uuid_for_color_control,
+            value_to_write,
+        )
+
+    async def communication_task(self) -> None:
+        while True:
+            data = self._data_queue.get()
+            if data == "q":
+                print("Disconnecting...")
+                self._is_connected = False
+                await self._client.disconnect()
+                break
+            elif data is not None:
                 try:
-                    r, g, b = map(int, rgb_input.split())
-                    await change_color(client, r, g, b)
+                    r, g, b = map(int, data.split())
+                    await self.change_color(r, g, b)
                 except ValueError:
                     print("Invalid input. Please enter three integers in the range [0,255] separated by spaces.")
 
+
+    async def set_connection(self) -> None:
+        async with BleakClient(self.lantern_address) as self._client:
+            self._is_connected = True
+            await self.communication_task()
+
+def control_thread(lantern_control):
+    while True:
+        if not lantern_control.is_connected():
+            print("***Lantern disconnected. Closing...")
+            break
+
+        rgb_input = input("Enter RGB values (R G B) or q to quit: ")
+        lantern_control.push_queue(rgb_input)
+
+        if rgb_input == "q":
+            print("***Lantern disconnected. Closing...")
+            break
+
+def main():
+    lantern_control = BLE_lantern_control()
+
+    # Connect to lantern and wait until connected.
+    Thread(target=lantern_control.connect, args=()).start()
+
+    # Wait until a max time is reached.
+    print("Connecting to lantern...")
+    total_wait_time_max = 20
+    current_wait_time = 0
+    wait_time_increment = 1
+    while not lantern_control.is_connected():
+        if current_wait_time >= total_wait_time_max:
+            print(f"Connection took too long with {current_wait_time} seconds. Exiting...")
+            return
+        current_wait_time += wait_time_increment
+        sleep(wait_time_increment)
+    print("Connected!")
+
+    # Start color control.
+    Thread(target=control_thread, args=(lantern_control,)).start()
+
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    main()
