@@ -40,7 +40,7 @@ class BLE_lantern_control:
             if data == "q":
                 print("Disconnecting...")
                 self._is_connected = False
-                await self._client.disconnect()
+                # await self._client.disconnect() # Does not work in Windows (https://github.com/hbldh/bleak/issues/807)
                 break
             elif data is not None:
                 try:
