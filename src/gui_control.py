@@ -1,54 +1,63 @@
-# Copied from ChatGPT on 01/01/24
-# Conversation: https://chat.openai.com/c/ef06cf65-ef7b-4519-8a31-1effb2779779
-
 import sys
-import asyncio
-from bleak import BleakClient
+from ble import BLE_lantern_control
 from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QColorDialog, QVBoxLayout
+from threading import Thread
+from time import sleep
 
-lantern_address = "66:EA:DA:00:29:34"
-characteristic_uuid_for_color_control = "e4490005-60c7-4baa-818d-235695a2757f"
-
-class BluetoothWorker(QThread):
-    def __init__(self, color):
-        super().__init__()
-        self.color = color
-
-    def run(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(change_color(self.color))
-
-async def change_color(color):
-    r, g, b = color.red(), color.green(), color.blue()
-    value_to_write = bytearray([0x00, r, g, b])
-    async with BleakClient(lantern_address) as client:
-            print("***Inside async with")
-            if await client.is_connected():
-                print("***Inside is_connected")
-                await client.write_gatt_char(characteristic_uuid_for_color_control, value_to_write)
-                print("***After await write")
-
-def select_color():
+def select_color(lantern_control: BLE_lantern_control):
     color = QColorDialog.getColor()
     if color.isValid():
-        worker = BluetoothWorker(color)
-        print("***Before BluetoothWorker start")
-        worker.start()
-        print("***After BluetoothWorker start")
+        r, g, b = color.red(), color.green(), color.blue()
+        lantern_control.push_queue(f"{r} {g} {b}")
 
 class LanternControlApp(QWidget):
     def __init__(self):
         super().__init__()
+        self.init_ble_lantern()
         self.initUI()
+
+    def control_thread(self):
+        while True:
+            if not self._lantern_control.is_connected():
+                print("***Lantern disconnected. Closing...")
+                break
+
+            rgb_input = input("Enter RGB values (R G B) or q to quit: ")
+            self._lantern_control.push_queue(rgb_input)
+
+            if rgb_input == "q":
+                print("***Lantern disconnected. Closing...")
+                break
+
+    def init_ble_lantern(self):
+        self._lantern_control = BLE_lantern_control()
+
+        # Connect to lantern and wait until connected.
+        Thread(target=self._lantern_control.connect, args=()).start()
+
+        # Wait until a max time is reached.
+        print("Connecting to lantern...")
+        total_wait_time_max = 20
+        current_wait_time = 0
+        wait_time_increment = 1
+        while not self._lantern_control.is_connected():
+            if current_wait_time >= total_wait_time_max:
+                print(f"Connection took too long with {current_wait_time} seconds. Exiting...")
+                return
+            current_wait_time += wait_time_increment
+            sleep(wait_time_increment)
+        print("Connected!")
+
+        # Start color control.
+        Thread(target=self.control_thread, args=()).start()
 
     def initUI(self):
         self.setWindowTitle("Lantern Control")
         layout = QVBoxLayout()
 
         colorBtn = QPushButton("Select Color", self)
-        colorBtn.clicked.connect(lambda: select_color())
+        colorBtn.clicked.connect(lambda: select_color(self._lantern_control))
 
         layout.addWidget(colorBtn)
         self.setLayout(layout)
